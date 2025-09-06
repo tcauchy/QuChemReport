@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
-from quchemreport.utils import units
+from quchemreport.utility_services import units
 
 
-def absoUV(et_energies, et_oscs, xvalues, spectrum):
+def absoUV(et_energies, et_oscs, xvalues, spectrum, file_name=None):
     # Plotting UV spectrum from the excited states energies and oscillator strengths, the xvalues in wavenumbers and the correspondng absorption in epsilon
     plt.cla()
     fig, ax = plt.subplots(nrows=2, sharex=True, gridspec_kw={'height_ratios': [3, 1]})
@@ -25,10 +25,10 @@ def absoUV(et_energies, et_oscs, xvalues, spectrum):
     plt.minorticks_on()
     fig = plt.gcf()
     fig.set_size_inches(6, 6)
-    plt.savefig("img-UV-Abso-Spectrum.png", dpi=300)
+    plt.savefig("{}-UV-Abso-Spectrum.png".format(file_name), dpi=300)
     #plt.show()                
 
-def emiUV(et_energies, et_oscs, xvalues, spectrum):
+def emiUV(et_energies, et_oscs, xvalues, spectrum, file_name=None):
     # Plotting UV spectrum from the excited states energies and oscillator strengths, the xvalues in wavenumbers and the correspondng absorption in epsilon
     plt.cla()
     fig, ax = plt.subplots(nrows=2, sharex=True, gridspec_kw={'height_ratios': [3, 1]})
@@ -51,11 +51,11 @@ def emiUV(et_energies, et_oscs, xvalues, spectrum):
     plt.minorticks_on()
     fig = plt.gcf()
     fig.set_size_inches(6, 6)
-    plt.savefig("img-UV-Emi-Spectrum.png", dpi=300)
+    plt.savefig("{}-UV-Emi-Spectrum.png".format(file_name), dpi=300)
     #plt.show()                
 
 
-def absoCD(et_energies, et_rotats, xvalues, CDspectrum):
+def absoCD(et_energies, et_rotats, xvalues, CDspectrum, file_name=None):
     # Plotting CD spectrum from the excited states energies and rotational strengths, the xvalues in wavenumbers and the correspondng absorption in epsilon
     plt.cla()
     fig, ax = plt.subplots(nrows=2, sharex=True, gridspec_kw={'height_ratios': [3, 1]})
@@ -79,10 +79,10 @@ def absoCD(et_energies, et_rotats, xvalues, CDspectrum):
     plt.minorticks_on()
     fig = plt.gcf()
     fig.set_size_inches(6, 6)
-    plt.savefig("img-UV-CD-Spectrum.png", dpi=300)
+    plt.savefig("{}-UV-CD-Spectrum.png".format(file_name), dpi=300)
     #plt.show()                
 
-def emiCD(et_energies, et_rotats, xvalues, CDspectrum):
+def emiCD(et_energies, et_rotats, xvalues, CDspectrum, file_name=None):
     # Plotting CD spectrum from the excited states energies and rotational strengths, the xvalues in wavenumbers and the correspondng absorption in epsilon
     plt.cla()
     fig, ax = plt.subplots(nrows=2, sharex=True, gridspec_kw={'height_ratios': [3, 1]})
@@ -106,7 +106,7 @@ def emiCD(et_energies, et_rotats, xvalues, CDspectrum):
     plt.minorticks_on()
     fig = plt.gcf()
     fig.set_size_inches(6, 6)
-    plt.savefig("img-UV-CD-Emi-Spectrum.png", dpi=300)
+    plt.savefig("{}-UV-CD-Emi-Spectrum.png".format(file_name), dpi=300)
     #plt.show()                
 
 

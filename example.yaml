@@ -1,0 +1,167 @@
+# ==============================================================================
+# QuChemReport YAML Input File
+# ==============================================================================
+# Controls how log files are parsed, analyzed, and turned into publication-ready
+# reports. Requires outputs from quantum chemistry tools like Gaussian or Orca.
+#
+# INSTRUCTIONS:
+# - Only edit values after colons.
+# - Indent with spaces (no tabs).
+# - Use true/false (without quotes) for options.
+# - Any output option will be ignored if the necessary data is not present.
+#
+# Supported log file types: sp, opt, opt_es, freq, freq_es, td, nmr, redox_state
+# ==============================================================================
+
+# Solver used for all log files: gaussian, orca, etc.
+# ⚠️ All files must come from this solver.
+common_solver:
+  gaussian
+  # orca 
+  
+
+# type can be a single job or a list of jobs (ex: [opt, freq, td])
+logfiles:
+  - path: "test/test_data/H2O_FREQ.log"
+    type: ['freq', 'opt']
+  - path: "test/test_data/H2O_OPT.log"
+    type: opt
+    # Reference means that it include all the information for the generation of MO pictures (basis set, MO coeeficients, etc)
+    reference: true
+  - path: "test/test_data/H2O_TD.log"
+    type: td
+  - path: "test/test_data/H2O_OPT_ES_fixed.log"
+    type: opt_es
+    excited_state_number: 1
+
+quality_control:
+  # method_consistency : strict | lax
+  method_consistency: strict 
+  checks:
+    formula: true
+    theory: true
+    nuclear_repulsion: true
+    charge: true
+    multiplicity: true
+    ground_state_optimization: true
+
+output:
+  output_path: "./output"
+  molecule_designated_name: "water"
+
+  # format : html | markdown | pdf
+  format: pdf
+
+  # verbosity : full | si | text
+  verbosity: full 
+  
+  include:
+    molecule:
+      # The image of the molecule topology that come from the reference logfile is display at the top in the Molecule Section
+      # While the different topologies from the rest of the logfiles are displayed at the end of the report
+      molecule_representation: true
+
+      # molecule_identification is a list of tags you want to display (e.g., directory name, formula, etc.)
+      # ⚠️ Warning : This feature is not fully implemented yet. 
+      # Currently, the application ignores the selected tags and simply displays all available ones in the data.
+      # However, the list must not be empty; if it is, no molecule information will be shown.
+      molecule_identification: ["formula"]
+
+      # Atomic Coordinates of the reference at the end of the report if atoms numbers > 15 
+      # Atomic Coordinates of other logfiles are at the end of the report
+      atomic_coordinates: true
+
+    # Display all the computational details for each logfiles
+    computational_details: true
+
+    wavefunction:
+      MO_analysis:
+        # List of molecular orbitals to be analyzed
+        # Using the keywords "homo" or "lumo", optionally followed by a signed integer offset.
+        # Used by both energies (text) and MO_diagrams. If omitted, neither output will be generated.
+        # This liste is required if the Energies output or the MO Diagrams output is enabled
+        MO_list: ["lumo+1", "lumo", "homo", "homo-1" ]
+
+        # Display the energies of the selected orbitals from the MO_list if they are available in the data
+        energies: true
+
+        # Display the MO diagrams generated on the data from the reference logfile
+        MO_diagrams: true
+
+      # Display the MEP Map generated on the data from the reference logfile
+      # ⚠️ Warning: Computing the MEP Map can be very memory-consuming and may cause the computation of the MEP map to crash. 
+      # If a crash occurs, the program will continue running, but the MEP Map will be skipped.
+      MEP_maps: true
+
+      # Display a population analysis highlighting atoms with significant charge deviations.
+      # If multiple charge analysis methods are available (Mulliken, Hirshfeld, CM5_partial), 
+      # the standard deviation range (±1σ) is computed separately for each method.
+      # For each method, atoms whose charge lies outside that range are identified.
+      # The final set of atoms shown is the union of these outliers across all available methods.
+      population_analysis: true
+
+    frequencies:
+      thermo_data: true
+      IR_spectrum: true
+
+    # ⚠️ Warning : The NMR section has yet to be implemented.
+    # Even if the NMR outputs are enabled, they won't appear in the final report
+    NMR:
+      NMR_shifts:
+        enabled: false
+        elements: ["H", "C"]
+      NMR_couplings:
+        enabled: false
+        elements: ["H"]
+
+    # Computation of the Fukui functions requires comparing a reference state
+    # (neutral molecule) with either an anion state (one electron less)
+    # and/or a cation state (one electron more), using the same molecular geometry.
+    reactivity:
+      CDFT_indices: true
+      fukui_functions: true
+
+    excited_states:
+      # Selection of the excited state is necessary when enabling
+      # the output of the transitions and the electron_density_difference
+      selection:
+        mode: dominant_only # dominant_only | first_n | all_states
+        first_n: 5 # required in mode first_n
+
+      # Disabling any of the outputs below will only hide them from the final report.
+      # The data may still be computed as the transitions are needed for the electron_density_difference (EDD).
+      transitions: true
+      absorption_spectrum: true
+      CD_spectrum: true
+      electron_density_difference: true
+
+    optimized_excited_states:
+      # Disabling any of the outputs below will only hide them from the final report.
+      # The data may still be computed as the transitions are needed for the electron_density_difference (EDD).
+      transitions: true
+      emission_spectrum: true
+      CPL_spectrum: true
+      electron_density_difference: true
+
+logging:
+  #⚠️ Warning : Logs in the console is mandatory for now.
+  # Disabling the loggin in the console won't work.
+  console: true
+  level: info # debug | info | warning | error
+
+# ⚠️ Warning : Camera control has yet to be implemented
+# For now the camera for the molecule reprensentation is PCA-based
+camera_view:
+  mode:
+    auto # auto = PCA-based "best view" (recommended)
+    # preset = static direction view (+x, +y, +z)
+    # manual = user-defined view saved to JSON
+  preset: z # used only if mode = preset; values: x, y, z
+  view_file: null # used only if mode = manual; path to a saved .json
+
+# ⚠️ Warning : Ressource monitoring is yet to be implemented
+resources:
+  nproc: 4 # Not enforced yet
+  memory: 8 # Not enforced yet
+  # Use offscreen mode for 3D renderings every times
+  mayavi_headless: true

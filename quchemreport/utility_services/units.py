@@ -2,13 +2,21 @@
 
 ## Conversion factors 
 
+import numpy as np
+
+
 def nm2wnb(x):
     # x in nanometers, returns the equivalent in wavenumber (cm-1)
     return 10000000.0 / x
 
 def wnb2nm(x):
+    # TODO : TO CHECK (CHECK IF CORRECT, RAISE AN ERROR IF 0 STOP THE EXEC)
+    # Remplace zeros by NaN to avoid division by zero
+    x = np.array(x, dtype=float)
+    X = np.where(x == 0, np.nan, x)
+    
     # x in wavenumber (cm-1), returns the equivalent in nanometers
-    return 10000000.0 / x
+    return 10000000.0 / X
 
 ## Hartree to eV conversion factor
 Eh_to_eV = 27.21138505

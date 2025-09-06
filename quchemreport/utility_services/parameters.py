@@ -1,6 +1,6 @@
 ## -*- encoding: utf-8 -*-
 
-from quchemreport.utils import units
+from quchemreport.utility_services import units
 
 ## Default parameters
 
@@ -61,3 +61,6 @@ scale = {"CTDIP" : 1., #For transitions charge transfer dipole same as EDD surfa
           "MAGDIP" : 1./units.A_to_a0,
           "OVDIP" : 1. #For transitions wavefunctions overlap dipole same as Oif surface 
           }
+
+# TODO : 
+THRESHOLD_IR_INTENSITIES = 50.0

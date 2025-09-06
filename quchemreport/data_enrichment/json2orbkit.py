@@ -17,7 +17,9 @@ from pickle import loads
 # scipy.parse for mo_coeffs in JSON
 import scipy.sparse
 
-def convert_json(jData, all_mo=False, spin=None):
+from quchemreport.utility_services.log_data import LogData
+
+def convert_data(data_model:LogData, all_mo=False, spin=None):
   '''Converts a JSON data created by scanlog to an instance of
   orbkit's QCinfo class.
 
@@ -42,9 +44,9 @@ def convert_json(jData, all_mo=False, spin=None):
   qc.mo_spec = MOClass([])
   
   # Added lines to orbkit program for basis set and MO coeffs storage in JSON
-  gbasis = loads(bytes(jData['comp_details']['general']['basis_set'], 'utf-8'))
-  shape = (jData['results']['wavefunction']['MO_number_kept'],jData['comp_details']['general']['basis_set_size'])
-  pre_mocoeffs = jData['results']['wavefunction']['MO_coefs']
+  gbasis = loads(bytes(data_model.comp_details.general.basis_set, 'utf-8'))
+  shape = (data_model.results.wavefunction.MO_number_kept, data_model.comp_details.general.basis_set_size)
+  pre_mocoeffs = data_model.results.wavefunction.MO_coefs
   # Detexction od MO coeffs stored as sparse matrices with tuples or dense ones.
   if type(pre_mocoeffs[0]) is tuple:
     # Compatible for both restricted and unrestricted cases. TODO prepare tests with sparsed restricted, sparse unrestricted..
@@ -62,16 +64,16 @@ def convert_json(jData, all_mo=False, spin=None):
     #mocoeffs = mocoeffs_norm   
  
   # Converting all information concerning atoms and geometry
-  qc.geo_spec = numpy.array(jData['results']['geometry']['elements_3D_coords_converged']).reshape((-1,3)) * aa_to_a0
-  for ii in range(jData["molecule"]['nb_atoms']):
-    symbol = get_atom_symbol(atom=jData["molecule"]['atoms_Z'][ii])
-    qc.geo_info.append([symbol,str(ii+1),str(jData["molecule"]['atoms_Z'][ii])])
+  qc.geo_spec = numpy.array(data_model.results.geometry.elements_3D_coords).reshape((-1,3)) * aa_to_a0
+  for ii in range(data_model.molecule.nb_atoms):
+    symbol = get_atom_symbol(atom=data_model.molecule.atoms_Z[ii])
+    qc.geo_info.append([symbol,str(ii+1),str(data_model.molecule.atoms_Z[ii])])
   
   # Convert geo_info and geo_spec to numpy.ndarrays
   qc.format_geo()
   
   # Converting all information about atomic basis set
-  for ii in range(jData["molecule"]['nb_atoms']):
+  for ii in range(data_model.molecule.nb_atoms):
     for jj in range(len(gbasis[ii])):
       pnum = len(gbasis[ii][jj][1])
       qc.ao_spec.append({'atom': ii,
@@ -84,13 +86,13 @@ def convert_json(jData, all_mo=False, spin=None):
         qc.ao_spec[-1]['coeffs'][kk][1] = gbasis[ii][jj][1][kk][1]
 
   # TODO test 6D 7F basis sets
-  if "ao_names" in jData['comp_details']['general']:
+  if data_model.comp_details.general.ao_names != None:
     # Reconstruct exponents list for ao_spec
-    aonames = jData['comp_details']['general']['ao_names']
+    aonames = data_model.comp_details.general.ao_names
 
     # renaming ORCA d orbitals to Gaussian style
     # TODO: f orbitals
-    if jData["comp_details"]["general"]["package"] == 'ORCA':
+    if data_model.comp_details.general.package == 'orca':
       for i, aoname in enumerate(aonames) :
         aonames[i] = aonames[i].replace('DZ2', 'D 0')
         aonames[i] = aonames[i].replace('DXZ', 'D+1')
@@ -123,9 +125,9 @@ def convert_json(jData, all_mo=False, spin=None):
         ao['lm'] = []
       for ll in range(l):
         if cartesian_basis:
-          ao['lxlylz'].append((aonames[count].lower().count('x'),
-                               aonames[count].lower().count('y'),
-                               aonames[count].lower().count('z')))
+          ao['lxlylz'].append( (aonames[count].lower().count('x'),
+                                aonames[count].lower().count('y'),
+                                aonames[count].lower().count('z')) )
         else:
           m = aonames[count].lower().split('_')[-1]
           m = m.replace('+',' +').replace('-',' -').replace('s','s 0').split(' ') 
@@ -138,8 +140,8 @@ def convert_json(jData, all_mo=False, spin=None):
         count += 1
   
   # Converting all information about molecular orbitals
-  ele_num = numpy.sum(jData["molecule"]['atoms_Z']) - numpy.sum(jData['comp_details']['general']['core_electrons_per_atoms']) - jData["molecule"]['charge']
-  ue = (jData["molecule"]['multiplicity']-1)
+  ele_num = numpy.sum(data_model.molecule.atoms_Z) - numpy.sum(data_model.comp_details.general.core_electrons_per_atoms) - data_model.molecule.charge
+  ue = (data_model.molecule.multiplicity-1)
   
   # Check for natural orbitals and occupation numbers
   is_natorb = False
@@ -150,7 +152,7 @@ def convert_json(jData, all_mo=False, spin=None):
   #                  ' ccData, but no natural occupation numbers (`nooccnos`)!')
   #  is_natorb = True
   
-  restricted = (len(jData['results']['wavefunction']['MO_energies']) == 1)
+  restricted = (len(data_model.results.wavefunction.MO_energies) == 1)
   if spin is not None:
     if spin != 'alpha' and spin != 'beta':
       raise IOError('`spin=%s` is not a valid option' % spin)
@@ -168,19 +170,21 @@ def convert_json(jData, all_mo=False, spin=None):
     add = ['_a','_b']      
     orb_sym = ['alpha','beta']
   
-  nmo = jData['results']['wavefunction']['MO_number_kept'] if 'MO_number_kept' in jData['results']['wavefunction'] else len(mocoeffs[0])  
+  nmo = data_model.results.wavefunction.MO_number_kept if data_model.results.wavefunction.MO_number_kept != None else len(mocoeffs[0])  
   for ii in range(nmo):    
     for i,j in enumerate(add):
-      if 'MO_sym' in jData['results']['wavefunction']:
-        a = '%s%s' % (jData['results']['wavefunction']['MO_sym'][i][ii],j)
+      if data_model.results.wavefunction.MO_sym != None:
+        a = '%s%s' % (data_model.results.wavefunction.MO_sym[i][ii],j)
       else:
         a = '%s%s' % ('A',j)
       if a not in sym.keys(): sym[a] = 1
       else: sym[a] += 1
       if is_natorb:
-        occ_num = ccData.nooccnos[ii]
+        # TODO : ccData does not exist here (same in the original code)
+        # occ_num = ccData.nooccnos[ii]
+        pass
       elif not restricted:
-        occ_num = 1.0 if ii <= jData['results']['wavefunction']['homo_indexes'][i] else 0.0
+        occ_num = 1.0 if ii <= data_model.results.wavefunction.homo_indexes[i] else 0.0
       elif ele_num > ue:
         occ_num = 2.0
         ele_num -= 2.0
@@ -192,7 +196,7 @@ def convert_json(jData, all_mo=False, spin=None):
         occ_num = 0.0
         
       qc.mo_spec.append({'coeffs': (mocoeffs[i])[ii],
-              'energy': jData['results']['wavefunction']['MO_energies'][i][ii]*ev_to_ha,
+              'energy': data_model.results.wavefunction.MO_energies[i][ii]*ev_to_ha,
               'occ_num': occ_num,
               'sym': '%d.%s' %(sym[a],a)
               })
@@ -202,7 +206,7 @@ def convert_json(jData, all_mo=False, spin=None):
           del qc.mo_spec[-1]
   
   # Use default order for atomic basis functions if aonames is not present
-  if 'ao_names' not in jData['comp_details']['general']:
+  if data_model.comp_details.general.ao_names == None:
     display('The attribute `aonames` is not present in the parsed data.')
     display('Using the default order of basis functions.')
     

@@ -7,11 +7,15 @@ from sys import exit
 import os
 from math import sqrt, acos, atan2
 
+from sklearn.decomposition import PCA
+
+from quchemreport.utility_services.log_data import LogData
+
 #from utils import A_to_a0
-from quchemreport.utils import units
+from quchemreport.utility_services import units
 
 ## Import mayavi defaults parameters
-from quchemreport.utils.parameters import img_width, img_height, surf_opacity, colors, scale, azimuth_cam1, azimuth_cam2, elev_angle_cam1, elev_angle_cam2
+from quchemreport.utility_services.parameters import img_width, img_height, surf_opacity, colors, scale, azimuth_cam1, azimuth_cam2, elev_angle_cam1, elev_angle_cam2
 width = img_width
 height = img_height
 
@@ -20,10 +24,11 @@ mlab.options.offscreen = True
 #mlab.options.offscreen = False
 
 ## Initialize visualization details common to all jobs
-with open('%s/../utils/Atoms_properties.csv' % os.path.dirname(__file__), "r") as f:
+with open('%s/../utility_services/Atoms_properties.csv' % os.path.dirname(__file__), "r") as f:
     tab = [line.split() for line in f]
-   
-def _init_scene(j_data):
+
+
+def _init_scene(elements_3D_coords, atom_pairs, atoms_Z):
     u"""Initializes the MayaVi scene.
 
     ** Parameters **
@@ -34,12 +39,22 @@ def _init_scene(j_data):
       figure : mayavi.core.scene.Scene
     The MayaVi scene with the atoms plotted.
     """
-
+      
+    if (
+      elements_3D_coords == None
+      or atom_pairs == None
+      or atoms_Z == None
+    ):
+      raise ValueError(
+        "Missing required data to initialize scene: "
+        "elements_3D_coords, atom_pairs, and atoms_Z must all be provided."
+      )
+    
     figure = mlab.figure(bgcolor=(1,1,1), fgcolor=(0,0,0))
     figure.scene.disable_render= True
-    geom = np.array(j_data["results"]["geometry"]["elements_3D_coords_converged"]).reshape((-1,3))/units.A_to_a0
-    conn = j_data["molecule"]["connectivity"]["atom_pairs"]
-    atom_nums = j_data["molecule"]["atoms_Z"]
+    geom = np.array(elements_3D_coords).reshape((-1,3))/units.A_to_a0
+    conn = atom_pairs
+    atom_nums = atoms_Z
     ## Draw atoms and bonds
     for i, atom in enumerate(atom_nums):
         p, color = geom[i], tuple(float(x)/255.0 for x in tab[atom][3:6])
@@ -56,6 +71,7 @@ def _init_scene(j_data):
 
     return figure
 
+# TODO : Utiliser caméra auto seulement
 def _set_cam(figure, cam):
     if cam == "cam1":
         mlab.view(azimuth=azimuth_cam1, elevation=elev_angle_cam1, figure=figure)         # First vue is almost from above our calculated normal
@@ -81,7 +97,118 @@ def CalcCutOff(data,IsoContourPercent=30):
     return datasortP[cumdatasortPnorm>=(100.-IsoContourPercent)][0], -datasortN[cumdatasortNnorm>=(100.-IsoContourPercent)][0]
 
 ## Visualize
-def topo(j_data, file_name=None, size=(width,height)):
+
+def get_molecule_bounds(coords):
+    """Calculate the bounding box of the molecule."""
+    coords = np.array(coords)
+    min_coords = np.min(coords, axis=0)
+    max_coords = np.max(coords, axis=0)
+    size = max_coords - min_coords
+    max_dimension = np.max(size)
+    return max_dimension
+
+def get_pca_camera_auto(coords, fov_deg=25, margin=1.2, perspective_offset_ratio=0.05):
+    """
+    Automatically calculate camera position and focus to view the entire molecule.
+    
+    Parameters
+    ----------
+    coords : array-like
+        Atomic coordinates
+    fov_deg : float, default=25
+        Vertical field of view in degrees
+    margin : float, default=1.5
+        Scene enlargement factor
+    perspective_offset_ratio : float, default=0.1
+        Lateral offset ratio for perspective
+    
+    Returns
+    -------
+    cam : np.ndarray
+        Camera position
+    foc : np.ndarray
+        Focus point
+    """
+    coords = np.array(coords)
+    
+    # Calculate center of mass
+    center = np.mean(coords, axis=0)
+    coords_centered = coords - center
+    
+    # PCA analysis
+    pca = PCA(n_components=3)
+    pca.fit(coords_centered)
+    
+    # Get normal vector (viewing direction)
+    normal = pca.components_[-1]  # Last component gives the normal to the main plane
+    
+    # Get the two main axes in the plane
+    x_axis = pca.components_[0]
+    y_axis = pca.components_[1]
+
+    # Calculate molecule extent
+    max_dimension = get_molecule_bounds(coords)
+  
+    # Alternative method: use the actual bounding box
+    bbox_extent = max_dimension * margin
+    
+    # Calculate distance based on field of view
+    theta = np.radians(fov_deg / 2)
+    if theta > 0:
+        r = bbox_extent / (2 * np.tan(theta))
+    else:
+        r = bbox_extent * 2  # Fallback
+    
+    # Ensure minimum distance
+    r = max(r, max_dimension * 2)
+    
+    # Calculate perspective offset
+    #offset = np.zeros(3)
+    offset = perspective_offset_ratio * r * (x_axis + y_axis)
+    
+    # Camera position: along normal + small lateral offset for perspective
+    cam = center + r * normal + offset
+    
+    # Focus on center of mass
+    foc = center
+    
+    return cam, foc, x_axis, y_axis, normal
+
+def add_pca_plane(coords, figure, size=3.0, resolution=10, opacity=0.3):
+    center = np.mean(coords, axis=0)
+    coords_centered = coords - center
+    pca = PCA(n_components=3)
+    pca.fit(coords_centered)
+    v1, v2 = pca.components_[0], pca.components_[1]  # vecteurs dans le plan
+
+    # Grille pour représenter le plan
+    grid = np.linspace(-size, size, resolution)
+    xx, yy = np.meshgrid(grid, grid)
+    plane = center + xx[..., None]*v1 + yy[..., None]*v2
+
+    # Affichage
+    mlab.mesh(plane[:, :, 0], plane[:, :, 1], plane[:, :, 2],
+            color=(1, 1, 0), opacity=opacity, figure=figure)
+    
+    return figure
+
+def move_camera_with_pca(coords, figure, r=5.0, perspective_offset=0.05):
+    cam, foc, x_axis, y_axis, normal = get_pca_camera_auto(coords, fov_deg=25, margin=1.2, perspective_offset_ratio=perspective_offset)
+    
+    figure.scene.disable_render = False
+    scene = figure.scene
+    
+    scene.camera.position = list(cam)
+    scene.camera.focal_point = list(foc)
+    
+    scene.camera.compute_view_plane_normal()
+    scene.camera.view_up = tuple(y_axis / np.linalg.norm(y_axis))
+    scene.render()
+
+    return figure, normal
+
+## Visualize
+def topoWithPCA(elements_3D_coords, atom_pairs, atoms_Z, file_name=None, size=(width,height)):
     u"""Creates the topological view of the molecule.
 
     ** Parameters **
@@ -92,20 +219,21 @@ def topo(j_data, file_name=None, size=(width,height)):
       size : tuple(int, int), optional
     The size of the image to save.
     """
-    geom = np.array(j_data["results"]["geometry"]["elements_3D_coords_converged"]).reshape((-1,3))/units.A_to_a0
-    figure = _init_scene(j_data) 
+    geom = np.array(elements_3D_coords).reshape((-1,3))/units.A_to_a0
+    figure = _init_scene(elements_3D_coords, atom_pairs, atoms_Z)  
+    figure, normal = move_camera_with_pca(geom, figure, r=12.0)
+    label_offset = 0.5 * normal 
+
     ## Show labels and numbers ( = indices + 1 )
-    for i, atom in enumerate(j_data["molecule"]["atoms_Z"]):
+    for i, atom in enumerate(atoms_Z):
         P, label = geom[i], tab[atom][1]
-        mlab.text3d(P[0]+ 0.1, P[1] + 0.1, P[2] + 0.3, label + str(i + 1), color=(0,0,0), scale=0.2, figure=figure)
+        P_label = P + label_offset  # offset in camera direction
+        mlab.text3d(*P_label, label + str(i + 1), color=(0, 0, 0), scale=0.2, figure=figure)
     if file_name is not None:
-        figure = _set_cam(figure, "cam1")
-        mlab.savefig("{}-TOPOLOGY.png".format(file_name), figure=figure, size=size)
-        figure = _set_cam(figure, "cam2")
-        mlab.savefig("{}-TOPOLOGY_cam2.png".format(file_name), figure=figure, size=size)        
+        mlab.savefig("{}-TOPOLOGY.png".format(file_name), figure=figure, size=size)    
     mlab.close()
 
-def viz_MO(data, X, Y, Z, j_data, file_name=None, labels=None, size=(width,height)):
+def viz_MO(data, X, Y, Z, elements_3D_coords, atom_pairs, atoms_Z, file_name=None, labels=None, size=(width,height)):
     u"""Visualizes the molecular orbitals of the molecule.
 
     ** Parameters **
@@ -122,8 +250,20 @@ def viz_MO(data, X, Y, Z, j_data, file_name=None, labels=None, size=(width,heigh
       size : tuple(int, int), optional
     The size of the image to save.
     """
+    
+    # Skip if missing data
+    if (
+      data is None
+      or X is None
+      or Y is None
+      or Z is None
+      or elements_3D_coords is None
+      or atom_pairs is None
+      or atoms_Z is None
+    ):
+      return
 
-    figure = _init_scene(j_data)
+    figure = _init_scene(elements_3D_coords, atom_pairs, atoms_Z)
     for i, series in enumerate(data):
         Cutoffp, Cutoffn = CalcCutOff(series,IsoContourPercent=20) 
         #print(Cutoffp, Cutoffn)
@@ -140,7 +280,7 @@ def viz_MO(data, X, Y, Z, j_data, file_name=None, labels=None, size=(width,heigh
         MOn.remove()
     mlab.close()
 
-def viz_EDD(data, X, Y, Z, j_data, et_sym, file_name=None, labels=None, size=(width,height)):
+def viz_EDD(data, X, Y, Z, elements_3D_coords, atom_pairs, atoms_Z, et_sym, file_name=None, labels=None, size=(width,height)):
     u"""Visualizes the electron density differences for the transitions of the molecule.
 
     ** Parameters **
@@ -158,7 +298,7 @@ def viz_EDD(data, X, Y, Z, j_data, et_sym, file_name=None, labels=None, size=(wi
     The size of the image to save.
     """
 
-    figure = _init_scene(j_data)
+    figure = _init_scene(elements_3D_coords, atom_pairs, atoms_Z)
     for i, series in enumerate(data):
         Cutoffp, Cutoffn = CalcCutOff(series,IsoContourPercent=30) 
         D_data = mlab.pipeline.scalar_field(X, Y, Z, series, figure=figure)
@@ -186,7 +326,7 @@ def viz_EDD(data, X, Y, Z, j_data, et_sym, file_name=None, labels=None, size=(wi
 
     mlab.close()
 
-def viz_Oif(data, X, Y, Z, j_data, et_sym, file_name=None, labels=None, size=(width,height)):
+def viz_Oif(data, X, Y, Z, elements_3D_coords, atom_pairs, atoms_Z, et_sym, file_name=None, labels=None, size=(width,height)):
     u"""Visualizes the overlap between the initial and final wavefunctions for the transitions of the molecule.
 
     ** Parameters **
@@ -208,7 +348,7 @@ def viz_Oif(data, X, Y, Z, j_data, et_sym, file_name=None, labels=None, size=(wi
     The MayaVi scene containing the visualization.
     """
 
-    figure = _init_scene(j_data)
+    figure = _init_scene(elements_3D_coords, atom_pairs, atoms_Z) 
     for i, series in enumerate(data):
         Cutoffp, Cutoffn = CalcCutOff(series,IsoContourPercent=30) 
         O_data = mlab.pipeline.scalar_field(X, Y, Z, series, figure=figure)
@@ -235,7 +375,7 @@ def viz_Oif(data, X, Y, Z, j_data, et_sym, file_name=None, labels=None, size=(wi
         On.remove()
     mlab.close()
 
-def viz_dip(data, j_data, et_sym, file_name=None, labels=None, size=(width,height)):
+def viz_dip(data, elements_3D_coords, atom_pairs, atoms_Z, et_sym, file_name=None, labels=None, size=(width,height)):
     u"""Visualizes the electric transition dipole moment.
 
     ** Parameters **
@@ -251,7 +391,7 @@ def viz_dip(data, j_data, et_sym, file_name=None, labels=None, size=(width,heigh
     The size of the image to save.
     """
 
-    figure = _init_scene(j_data)
+    figure = _init_scene(elements_3D_coords, atom_pairs, atoms_Z) 
     for dip_type in data :
         D=data[dip_type]
         Mu = mlab.quiver3d(D[1][0], D[1][1], D[1][2], D[0][0] - D[1][0], D[0][1] - D[1][1], D[0][2] - D[1][2] , figure=figure, mode='arrow', scale_factor=scale[dip_type], color=colors[dip_type])
@@ -278,7 +418,7 @@ def viz_dip(data, j_data, et_sym, file_name=None, labels=None, size=(width,heigh
             
     mlab.close()
         
-def viz_Potential(r_data, V_data, X, Y, Z, j_data, file_name=None, size=(width,height)):
+def viz_Potential(r_data, V_data, X, Y, Z, elements_3D_coords, atom_pairs, atoms_Z, file_name=None, size=(width,height)):
     u"""Visualizes the electrostatic potential difference of the molecule.
 
     ** Parameters **
@@ -297,6 +437,19 @@ def viz_Potential(r_data, V_data, X, Y, Z, j_data, file_name=None, size=(width,h
       figure : mayavi.core.scene.Scene
     The MayaVi scene containing the visualization.
     """
+    
+    # Skip if missing data
+    if (
+      r_data is None
+      or V_data is None
+      or X is None
+      or Y is None
+      or Z is None
+      or elements_3D_coords is None
+      or atom_pairs is None
+      or atoms_Z is None
+    ):
+      return
 
     # For a neutral compound we should have in the potential some negative small values (delta- between 0 to -0.1) 
     # and bigger range in the postive values (delta+ between 0 to several hundreds)
@@ -316,7 +469,7 @@ def viz_Potential(r_data, V_data, X, Y, Z, j_data, file_name=None, size=(width,h
     turbo_with_alpha[:, -1] = 0.85 # hard coded opacity for potential
 
     # Case with relative scale
-    figure = _init_scene(j_data)
+    figure = _init_scene(elements_3D_coords, atom_pairs, atoms_Z) 
     src = mlab.pipeline.scalar_field(X, Y, Z, r_data, figure=figure)
     ## Add potential as additional array
     src.image_data.point_data.add_array(V.T.ravel()) #/units.V_to_Kcal_mol)
@@ -346,7 +499,7 @@ def viz_Potential(r_data, V_data, X, Y, Z, j_data, file_name=None, size=(width,h
         mlab.savefig("{}-MEP_cam2.png".format(file_name), figure=figure, size=size)
 
     # Case with a fixed scale
-    figure_fixed = _init_scene(j_data)
+    figure_fixed = _init_scene(elements_3D_coords, atom_pairs, atoms_Z) 
     src_fixed = mlab.pipeline.scalar_field(X, Y, Z, r_data, figure=figure_fixed)
     ## Add potential as additional array
     src_fixed.image_data.point_data.add_array(V.T.ravel()) #/units.V_to_Kcal_mol)
@@ -370,7 +523,7 @@ def viz_Potential(r_data, V_data, X, Y, Z, j_data, file_name=None, size=(width,h
         figure_fixed = _set_cam(figure_fixed, "cam2")
         mlab.savefig("{}-MEP_fixed_cam2.png".format(file_name), figure=figure_fixed, size=size)
 
-def viz_Fukui(data, X, Y, Z, j_data, file_name=None, labels=None, size=(width,height)):
+def viz_Fukui(data, X, Y, Z, elements_3D_coords, atom_pairs, atoms_Z, file_name=None, labels=None, size=(width,height)):
     u"""Visualizes the fukui density differences for the molecule.
 
     ** Parameters **
@@ -392,7 +545,7 @@ def viz_Fukui(data, X, Y, Z, j_data, file_name=None, labels=None, size=(width,he
     The MayaVi scene containing the visualization.
     """
 
-    figure = _init_scene(j_data)
+    figure = _init_scene(elements_3D_coords, atom_pairs, atoms_Z) 
     Cutoffp, Cutoffn = CalcCutOff(data,IsoContourPercent=30) 
     F_data = mlab.pipeline.scalar_field(X, Y, Z, data, figure=figure)
     Fp = mlab.pipeline.iso_surface(F_data, figure=figure, contours=[ Cutoffp ], color=(0.0, 0.5, 0.5), opacity=surf_opacity)
@@ -406,7 +559,8 @@ def viz_Fukui(data, X, Y, Z, j_data, file_name=None, labels=None, size=(width,he
     Fp.remove()
     Fn.remove()
 
-def viz_Fdual(data, X, Y, Z, j_data, file_name=None, size=(width,height)):
+
+def viz_Fdual(data, X, Y, Z, elements_3D_coords, atom_pairs, atoms_Z, file_name=None, size=(width,height)):
     u"""Visualizes the fukui density differences for the molecule.
 
     ** Parameters **
@@ -425,7 +579,7 @@ def viz_Fdual(data, X, Y, Z, j_data, file_name=None, size=(width,height)):
       figure : mayavi.core.scene.Scene
     The MayaVi scene containing the visualization.
     """
-    figure = _init_scene(j_data)
+    figure = _init_scene(elements_3D_coords, atom_pairs, atoms_Z) 
     Cutoffp, Cutoffn = CalcCutOff(data,IsoContourPercent=30) 
 
     F_data = mlab.pipeline.scalar_field(X, Y, Z, data, figure=figure)
